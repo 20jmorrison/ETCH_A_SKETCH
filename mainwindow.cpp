@@ -1,62 +1,79 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include <QRegularExpression>
+#include <QGraphicsSceneMouseEvent>
+#include <QGraphicsPathItem>
+#include <QPainterPath>
+#include <QGraphicsScene>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
-    connect(ui->left_btn, SIGNAL(clicked()), this, SLOT(rotate_left()));
-    connect(ui->right_btn, SIGNAL(clicked()), this, SLOT(rotate_right()));
+    this->setStyleSheet("background-color: red;");
     connect(&serial, &QSerialPort::readyRead, this, &MainWindow::serialPortCallback);
-    ui->dial->setValue(dialVal);
     initSerialPort();
+
+    ui->graphicsView->setScene(new QGraphicsScene(this->centralWidget()));
+    path = QPainterPath();
+    path.moveTo(505, 505);
+    currentItem = new QGraphicsPathItem();  // Allocate on the heap
+    currentItem->setPath(path);
+    currentItem->setPen(pen);
+    ui->graphicsView->scene()->addItem(currentItem);  // Add item to the scene
+    ui->left_dial->setStyleSheet("background-color: white;");
+    ui->right_dial->setStyleSheet("background-color: white;");
+
 }
 
 MainWindow::~MainWindow()
 {
+    delete currentItem;  // Release the allocated memory
     delete ui;
 }
 
-void MainWindow::rotate_left() {
-    dialVal-=5;
-    ui->dial->setValue(dialVal);
-}
-
-void MainWindow::rotate_right() {
-    dialVal += 5;
-    ui->dial->setValue(dialVal);
-}
-
-void MainWindow::initSerialPort(){
+void MainWindow::initSerialPort()
+{
     // Set up the serial port settings in your initialization code
-    serial.setPortName("tty.usbmodem141401"); // Change this to the port your Arduino is connected to
+    serial.setPortName("tty.usbmodem141201"); // Change this to the port your Arduino is connected to
     serial.setBaudRate(QSerialPort::Baud9600);
     serial.setDataBits(QSerialPort::Data8);
     serial.setParity(QSerialPort::NoParity);
     serial.setStopBits(QSerialPort::OneStop);
 
     // Connect to the serial port
-    if(serial.open(QIODevice::ReadWrite)) {
+    if (serial.open(QIODevice::ReadWrite)) {
         qDebug() << "Serial port opened successfully";
     } else {
         qDebug() << "Error opening serial port";
     }
 }
 
-void MainWindow::serialPortCallback(){
+void MainWindow::serialPortCallback()
+{
     // Read all available data from the serial port
     QByteArray data = serial.readAll();
-    if (data == "\n"){
+    if (data == "\n") {
         startDataCollection = true;
-    }
-    else if (data == "\r"){
+    } else if (data == "\r") {
         startDataCollection = false;
-        int buffToInt = serialBuffer.toInt();
-        ui->dial->setValue(buffToInt);
+        QRegularExpression regex("(\\d+):(\\d+)");
+        QRegularExpressionMatch match = regex.match(QString::fromStdString(serialBuffer.toStdString()));
+
+        if (match.hasMatch()) {
+            QString firstNumber = match.captured(1);
+            QString secondNumber = match.captured(2);
+
+            ui->left_dial->setValue(firstNumber.toInt());
+            ui->right_dial->setValue(secondNumber.toInt());
+            path.lineTo(firstNumber.toInt(), secondNumber.toInt());
+            currentItem->setPath(path);
+        } else {
+            qDebug() << "No match found";
+        }
         serialBuffer.clear();
-    }
-    else if(startDataCollection){
+    } else if (startDataCollection) {
         serialBuffer.append(data);
     }
 }
